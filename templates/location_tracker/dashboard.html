@@ -1,0 +1,231 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="search-form">
+            <h3>🔍 Find SIM Location</h3>
+            <form id="locationForm">
+                <div class="mb-3">
+                    <label for="phoneNumber" class="form-label">Phone Number</label>
+                    <input type="tel" class="form-control" id="phoneNumber" placeholder="+1234567890" required>
+                    <div class="form-text">Enter phone number with country code (e.g., +1234567890)</div>
+                </div>
+                
+                <div class="consent-box">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="consentCheck" required>
+                        <label class="form-check-label" for="consentCheck">
+                            <strong>⚠️ Legal Consent Required</strong><br>
+                            I confirm that I have proper authorization to track this phone number. 
+                            This includes being the owner of the number or having explicit consent 
+                            from the owner. Unauthorized tracking is illegal.
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="searchBtn">
+                    <span id="searchSpinner" class="spinner-border spinner-border-sm d-none me-2"></span>
+                    🔍 Search Location
+                </button>
+            </form>
+        </div>
+
+        <div id="resultsSection" class="d-none">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">📍 Location Results</h5>
+                    <span id="statusBadge" class="badge"></span>
+                </div>
+                <div class="card-body">
+                    <div id="locationInfo"></div>
+                    <div id="mapContainer" class="map-container mt-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="errorAlert" class="alert alert-danger d-none"></div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">📊 Recent Searches</h5>
+            </div>
+            <div class="card-body">
+                {% if searches %}
+                    {% for search in searches %}
+                    <div class="history-item">
+                        <div class="d-flex justify-content-between">
+                            <strong>{{ search.phone_number }}</strong>
+                            <span class="badge 
+                                {% if search.status == 'completed' %}bg-success
+                                {% elif search.status == 'pending' %}bg-warning
+                                {% elif search.status == 'failed' %}bg-danger
+                                {% else %}bg-secondary{% endif %} status-badge">
+                                {{ search.get_status_display }}
+                            </span>
+                        </div>
+                        <small class="text-muted">{{ search.created_at|date:"M d, Y H:i" }}</small>
+                        {% if search.address %}
+                            <div class="text-muted small mt-1">📍 {{ search.address }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">No recent searches</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h6 class="mb-0">ℹ️ Important Information</h6>
+            </div>
+            <div class="card-body">
+                <div class="small">
+                    <p><strong>Legal Requirements:</strong></p>
+                    <ul>
+                        <li>Phone ownership verification required</li>
+                        <li>Explicit consent must be obtained</li>
+                        <li>Comply with local privacy laws</li>
+                    </ul>
+                    
+                    <p><strong>Accuracy Notes:</strong></p>
+                    <ul>
+                        <li>Cell tower triangulation: ±500-2000m</li>
+                        <li>GPS data: ±5-50m (if available)</li>
+                        <li>Results depend on carrier cooperation</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let map = null;
+let marker = null;
+
+document.getElementById('locationForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const phoneNumber = document.getElementById('phoneNumber').value;
+    const consent = document.getElementById('consentCheck').checked;
+    const searchBtn = document.getElementById('searchBtn');
+    const searchSpinner = document.getElementById('searchSpinner');
+    const resultsSection = document.getElementById('resultsSection');
+    const errorAlert = document.getElementById('errorAlert');
+    
+    // Reset UI
+    errorAlert.classList.add('d-none');
+    resultsSection.classList.add('d-none');
+    
+    // Show loading
+    searchBtn.disabled = true;
+    searchSpinner.classList.remove('d-none');
+    
+    try {
+        const response = await fetch('/api/search/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({
+                phone_number: phoneNumber,
+                consent: consent
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.status === 'success') {
+            displayResults(data);
+        } else {
+            showError(data.error || 'Search failed');
+        }
+    } catch (error) {
+        showError('Network error occurred');
+    } finally {
+        searchBtn.disabled = false;
+        searchSpinner.classList.add('d-none');
+    }
+});
+
+function displayResults(data) {
+    const resultsSection = document.getElementById('resultsSection');
+    const statusBadge = document.getElementById('statusBadge');
+    const locationInfo = document.getElementById('locationInfo');
+    
+    statusBadge.textContent = 'Completed';
+    statusBadge.className = 'badge bg-success';
+    
+    const location = data.location;
+    locationInfo.innerHTML = `
+        <div class="row">
+            <div class="col-md-6">
+                <p><strong>📱 Phone:</strong> ${data.phone_number || 'N/A'}</p>
+                <p><strong>📍 Coordinates:</strong> ${location.latitude}, ${location.longitude}</p>
+                <p><strong>🎯 Accuracy:</strong> ±${location.accuracy}m</p>
+            </div>
+            <div class="col-md-6">
+                <p><strong>📧 Address:</strong> ${location.address || 'N/A'}</p>
+                <p><strong>📡 Carrier:</strong> ${location.carrier || 'Unknown'}</p>
+            </div>
+        </div>
+    `;
+    
+    // Initialize map
+    initializeMap(location.latitude, location.longitude, location.accuracy);
+    
+    resultsSection.classList.remove('d-none');
+}
+
+function initializeMap(lat, lng, accuracy) {
+    const mapContainer = document.getElementById('mapContainer');
+    
+    if (map) {
+        map.remove();
+    }
+    
+    map = L.map('mapContainer').setView([lat, lng], 13);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+    
+    // Add marker
+    marker = L.marker([lat, lng]).addTo(map)
+        .bindPopup(`<strong>Estimated Location</strong><br>Accuracy: ±${accuracy}m`)
+        .openPopup();
+    
+    // Add accuracy circle
+    L.circle([lat, lng], {
+        color: 'red',
+        fillColor: '#f03',
+        fillOpacity: 0.1,
+        radius: accuracy
+    }).addTo(map);
+}
+
+function showError(message) {
+    const errorAlert = document.getElementById('errorAlert');
+    errorAlert.textContent = message;
+    errorAlert.classList.remove('d-none');
+}
+
+function getCSRFToken() {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'csrftoken') {
+            return value;
+        }
+    }
+    return '';
+}
+</script>
+{% endblock %}
