@@ -81,12 +81,6 @@ To make this production-ready, you’ll need:
 
 ---
 
-## ⚠️ Disclaimer
-This project is for **educational purposes only**.  
-Tracking phone locations without proper authorization and consent may violate laws in your country. Ensure compliance with local regulations before deploying.
-
----
-
 ## 👨‍💻 Author
 Developed by **Alok Kumar Panda**  
 [LinkedIn](https://www.linkedin.com/in/alok-kumar-panda-864b421a4) | [Portfolio](https://portfolio-one-mu-78.vercel.app/)  
